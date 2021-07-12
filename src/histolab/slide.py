@@ -29,7 +29,10 @@ from typing import Iterator, List, Tuple, Union
 
 import numpy as np
 import openslide
+import large_image  # for .scn slides where openslide fails!
 import PIL
+from PIL.Image import BICUBIC, LANCZOS
+from io import BytesIO
 from deprecated.sphinx import deprecated
 
 from .exceptions import LevelError
@@ -75,6 +78,25 @@ class Slide:
     # ---public interface methods and properties---
 
     @lazyproperty
+    def base_mpp(self) -> float:
+        """Get microns-per-pixel resolution at scan magnification."""
+        if 'aperio.MPP' in self.properties:
+            return float(self.properties['aperio.MPP'])
+        elif 'tiff.XResolution' in self.properties:
+            resunit = self.properties['tiff.ResolutionUnit']
+            if resunit == 'centimeter':
+                return 1 / (float(self.properties['tiff.XResolution']) * 1e-4)
+            else:
+                raise NotImplementedError(f'Unimplemented tiff.ResolutionUnit {resunit}')
+        else:
+            raise NotImplementedError('Not sure what the magnification is!')
+
+    def get_mpp_at_level(self, level: int):
+        """Get microns-per-pixel resolution at a specific level."""
+        return self.base_mpp * float(
+            self.properties['openslide.level[%d].downsample' % level])
+
+    @lazyproperty
     def dimensions(self) -> Tuple[int, int]:
         """Return the slide dimensions (w,h) at level 0.
 
@@ -85,7 +107,9 @@ class Slide:
         """
         return self._wsi.dimensions
 
-    def extract_tile(self, coords: CoordinatePair, level: int) -> Tile:
+    def extract_tile(
+            self, coords: CoordinatePair, level: int,
+            mpp: float = None, resize_to_exactly: Tuple = None) -> Tile:
         """Extract a tile of the image at the selected level.
 
         Parameters
@@ -94,6 +118,13 @@ class Slide:
             Coordinates at level 0 from which to extract the tile.
         level : int
             Level from which to extract the tile.
+        mpp : float
+            Micron per pixel resolution. Takes precedence over level.
+        resize_to_exactly : Tuple
+            (Width, Height) to resize tile to. Helpful when mpp is used. IT
+            goes without saying that this would result in the returned tile
+            at a different mpp than asked. Helpful in a very limited
+            circumstance.
 
         Returns
         -------
@@ -110,18 +141,47 @@ class Slide:
                 f"{self.dimensions}"
             )
 
-        coords_level = scale_coordinates(
-            reference_coords=coords,
-            reference_size=self.level_dimensions(level=0),
-            target_size=self.level_dimensions(level=level),
-        )
+        if mpp is None:
 
-        h_l = coords_level.y_br - coords_level.y_ul
-        w_l = coords_level.x_br - coords_level.x_ul
+            coords_level = scale_coordinates(
+                reference_coords=coords,
+                reference_size=self.level_dimensions(level=0),
+                target_size=self.level_dimensions(level=level),
+            )
 
-        image = self._wsi.read_region(
-            location=(coords.x_ul, coords.y_ul), level=level, size=(w_l, h_l)
-        )
+            h_l = coords_level.y_br - coords_level.y_ul
+            w_l = coords_level.x_br - coords_level.x_ul
+
+            image = self._wsi.read_region(
+                location=(coords.x_ul, coords.y_ul), level=level, size=(w_l, h_l)
+            )
+
+        else:
+            # use large image, which has much better support for
+            # getting exact mpp resolutions
+            mm = mpp / 1000
+            image, _ = self._tilesource.getRegion(
+                region=dict(
+                    left=coords.x_ul, top=coords.y_ul,
+                    right=coords.x_br, bottom=coords.y_br,
+                    units='base_pixels'),
+                scale=dict(mm_x=mm, mm_y=mm),
+                format=large_image.tilesource.TILE_FORMAT_PIL,
+                jpegQuality=100,
+            )
+            image = image.convert("RGB")
+
+        # Sometimes when mpp kwarg is used, the image size is going to be
+        # off from what the user expects at that level by a couple of pixels.
+        # Here we allow the use the flexibility to resize
+        if resize_to_exactly is not None:
+            asis = resize_to_exactly[0] == image.size[0]
+            if not asis:
+                image = image.resize(
+                    resize_to_exactly,
+                    BICUBIC if resize_to_exactly[0] >= image.size[0] else LANCZOS
+                )
+
         tile = Tile(image, coords, level)
         return tile
 
@@ -213,7 +273,8 @@ class Slide:
         -------
         name : str
         """
-        return ntpath.basename(self._path).split(".")[0]
+        bname = ntpath.basename(self._path)
+        return bname[:bname.rfind(".")]
 
     @lazyproperty
     def processed_path(self) -> str:
@@ -287,9 +348,21 @@ class Slide:
         PIL.Image.Image
             The slide thumbnail.
         """
-        return self._wsi.get_thumbnail(self._thumbnail_size)
+        if self._wsi.level_count > 1:
+            return self._wsi.get_thumbnail(self._thumbnail_size)
+        else:
+            # use large image if tiff file only has one level
+            thumb_bytes, _ = self._tilesource.getThumbnail(encoding='PNG')
+            thumbnail = self._bytes2pil(thumb_bytes).convert('RGB')
+            return thumbnail
 
     # ------- implementation helpers -------
+
+    @staticmethod
+    def _bytes2pil(bytesim):
+        image_content = BytesIO(bytesim)
+        image_content.seek(0)
+        return PIL.Image.open(image_content)
 
     @staticmethod
     @deprecated(
@@ -390,13 +463,22 @@ class Slide:
         """
 
         _, _, new_w, new_h = self._resampled_dimensions(scale_factor)
-        level = self._wsi.get_best_level_for_downsample(scale_factor)
-        whole_slide_image = self._wsi.read_region(
-            (0, 0), level, self._wsi.level_dimensions[level]
-        )
-        # ---converts openslide read_region to an actual RGBA image---
-        whole_slide_image = whole_slide_image.convert("RGB")
-        img = whole_slide_image.resize((new_w, new_h), PIL.Image.BILINEAR)
+        if self._wsi.level_count > 1:
+            level = self._wsi.get_best_level_for_downsample(scale_factor)
+            whole_slide_image = self._wsi.read_region(
+                (0, 0), level, self._wsi.level_dimensions[level]
+            )
+            # ---converts openslide read_region to an actual RGBA image---
+            whole_slide_image = whole_slide_image.convert("RGB")
+            img = whole_slide_image.resize((new_w, new_h), PIL.Image.BILINEAR)
+        else:
+            # use large image if tiff file only has one level
+            meta = self._tilesource.getMetadata()
+            img, _ = self._tilesource.getRegion(
+                scale = dict(magnification=meta['magnification'] / scale_factor),
+                format = large_image.tilesource.TILE_FORMAT_PIL,
+            )
+            img = img.convert("RGB")
         arr_img = np.asarray(img)
         return img, arr_img
 
@@ -476,6 +558,19 @@ class Slide:
                 f"The wsi path resource doesn't exist: {self._path}"
             )
         return slide
+
+
+    @lazyproperty
+    def _tilesource(self) -> Union[openslide.OpenSlide, openslide.ImageSlide]:
+        """Open the slide and returns a large_image tile source object
+
+        Returns
+        -------
+        source : large_image TileSource object
+            An TileSource object representing a whole-slide image.
+        """
+        source = large_image.getTileSource(self._path)
+        return source
 
 
 class SlideSet:

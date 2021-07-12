@@ -20,7 +20,7 @@ import csv
 import logging
 import os
 from abc import abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Iterable, Union
 
 import numpy as np
 import PIL
@@ -64,7 +64,9 @@ class Tiler(Protocol):
         extraction_mask: BinaryMask = BiggestTissueBoxMask(),
         scale_factor: int = 32,
         alpha: int = 128,
-        outline: str = "red",
+        outline: Union[str, List] = "red",
+        linewidth: int = 0,
+        tiles: Iterable = None,
     ) -> PIL.Image.Image:
         """Draw tile box references on a rescaled version of the slide
 
@@ -81,6 +83,10 @@ class Tiler(Protocol):
             The alpha level to be applied to the rescaled slide, default to 128.
         outline: str
             The outline color for the tile annotations, default to 'red'.
+        linewidth: int
+            Thickness of line used to draw tiles
+        tiles: Iterable
+            Tiles to visualize. Optional, will be extracted if None.
 
         Returns
         -------
@@ -88,18 +94,28 @@ class Tiler(Protocol):
             PIL Image of the rescaled slide with the extracted tiles outlined
         """
         img = slide.scaled_image(scale_factor)
-        img.putalpha(alpha)
+        if alpha is not None:
+            img.putalpha(alpha)
         draw = PIL.ImageDraw.Draw(img)
 
-        tiles = (
-            self._tiles_generator(slide, extraction_mask)[0]
-            if isinstance(self, ScoreTiler)
-            else self._tiles_generator(slide, extraction_mask)
-        )
+        if tiles is None:
+            tiles = (
+                self._tiles_generator(slide, extraction_mask)[0]
+                if isinstance(self, ScoreTiler)
+                else self._tiles_generator(slide, extraction_mask)
+            )
         tiles_coords = (tile[1] for tile in tiles)
-        for coords in tiles_coords:
+
+        # maybe user specified colors for each tile
+        if isinstance(outline, str):
+            outline = [outline] * len(tiles_coords)
+
+        for i, coords in enumerate(tiles_coords):
             rescaled = scale_coordinates(coords, slide.dimensions, img.size)
-            draw.rectangle(tuple(rescaled), outline=outline)
+            clr = outline[i]
+            if not isinstance(clr, str):
+                clr = tuple([int(255 * j) for j in clr])
+            draw.rectangle(tuple(rescaled), outline=clr, width=linewidth)
         return img
 
     # ------- implementation helpers -------
@@ -228,9 +244,11 @@ class GridTiler(Tiler):
         pixel_overlap: int = 0,
         prefix: str = "",
         suffix: str = ".png",
+        mpp: float = None,
     ):
         self.tile_size = tile_size
         self.level = level
+        self.mpp = mpp
         self.check_tissue = check_tissue
         self.tissue_percent = tissue_percent
         self.pixel_overlap = pixel_overlap
@@ -275,8 +293,8 @@ class GridTiler(Tiler):
             tile_filename = self._tile_filename(tile_wsi_coords, tiles_counter)
             full_tile_path = os.path.join(slide.processed_path, tile_filename)
             tile.save(full_tile_path)
-            logging.info(f"\t Tile {tiles_counter} saved: {tile_filename}")
-        logging.info(f"{tiles_counter} Grid Tiles have been saved.")
+            logger.info(f"\t Tile {tiles_counter} saved: {tile_filename}")
+        logger.info(f"{tiles_counter} Grid Tiles have been saved.")
 
     @property
     def tile_size(self) -> Tuple[int, int]:
@@ -392,7 +410,7 @@ class GridTiler(Tiler):
         )
         for coords in grid_coordinates_generator:
             try:
-                tile = slide.extract_tile(coords, self.level)
+                tile = slide.extract_tile(coords, level=self.level, mpp=self.mpp)
             except ValueError:
                 continue
 
@@ -474,6 +492,7 @@ class RandomTiler(Tiler):
         prefix: str = "",
         suffix: str = ".png",
         max_iter: int = int(1e4),
+        mpp: float = None,
     ):
 
         super().__init__()
@@ -482,6 +501,7 @@ class RandomTiler(Tiler):
         self.n_tiles = n_tiles
         self.max_iter = max_iter
         self.level = level
+        self.mpp = mpp
         self.seed = seed
         self.check_tissue = check_tissue
         self.tissue_percent = tissue_percent
@@ -526,8 +546,8 @@ class RandomTiler(Tiler):
             tile_filename = self._tile_filename(tile_wsi_coords, tiles_counter)
             full_tile_path = os.path.join(slide.processed_path, tile_filename)
             tile.save(full_tile_path)
-            logging.info(f"\t Tile {tiles_counter} saved: {tile_filename}")
-        logging.info(f"{tiles_counter+1} Random Tiles have been saved.")
+            logger.info(f"\t Tile {tiles_counter} saved: {tile_filename}")
+        logger.info(f"{tiles_counter+1} Random Tiles have been saved.")
 
     @property
     def max_iter(self) -> int:
@@ -627,7 +647,7 @@ class RandomTiler(Tiler):
         while True:
             tile_wsi_coords = self._random_tile_coordinates(slide, extraction_mask)
             try:
-                tile = slide.extract_tile(tile_wsi_coords, self.level)
+                tile = slide.extract_tile(tile_wsi_coords, level=self.level, mpp=self.mpp)
             except ValueError:
                 iteration -= 1
                 continue
@@ -688,6 +708,7 @@ class ScoreTiler(GridTiler):
         pixel_overlap: int = 0,
         prefix: str = "",
         suffix: str = ".png",
+        mpp: float = None,
     ):
         self.scorer = scorer
         self.n_tiles = n_tiles
@@ -700,6 +721,7 @@ class ScoreTiler(GridTiler):
             pixel_overlap,
             prefix,
             suffix,
+            mpp=mpp,
         )
 
     def extract(
@@ -708,9 +730,11 @@ class ScoreTiler(GridTiler):
         extraction_mask: BinaryMask = BiggestTissueBoxMask(),
         report_path: str = None,
         log_level: str = "INFO",
+        save_tiles: bool = True,
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> None:
-        """Extract grid tiles and save them to disk, according to a scoring function and
-        following this filename pattern:
+        """Extract grid tiles according to a scoring function, following this filename pattern:
         `{prefix}tile_{tiles_counter}_level{level}_{x_ul_wsi}-{y_ul_wsi}-{x_br_wsi}-{y_br_wsi}{suffix}`
 
         Save a CSV report file with the saved tiles and the associated score.
@@ -726,6 +750,12 @@ class ScoreTiler(GridTiler):
             Path to the CSV report. If None, no report will be saved
         log_level: str, {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
             Threshold level for the log messages. Default "INFO"
+        save_tiles: bool, optional
+            Save the actual tile images to disk? Default: True.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Raises
         ------
@@ -740,32 +770,41 @@ class ScoreTiler(GridTiler):
         self._validate_tile_size(slide)
 
         highest_score_tiles, highest_scaled_score_tiles = self._tiles_generator(
-            slide, extraction_mask
+            slide, extraction_mask, logfreq=logfreq, monitor=monitor,
         )
 
         tiles_counter = 0
         filenames = []
 
         for tiles_counter, (score, tile_wsi_coords) in enumerate(highest_score_tiles):
-            tile = slide.extract_tile(tile_wsi_coords, self.level)
+            tile = slide.extract_tile(tile_wsi_coords, level=self.level, mpp=self.mpp)
             tile_filename = self._tile_filename(tile_wsi_coords, tiles_counter)
-            tile.save(os.path.join(slide.processed_path, tile_filename))
+            if save_tiles:
+                tile.save(os.path.join(slide.processed_path, tile_filename))
+                if tiles_counter % logfreq == 0:
+                    logger.info(
+                        f"{monitor}: Tile {tiles_counter} - score: {score}"
+                        f" saved: {tile_filename}"
+                    )
             filenames.append(tile_filename)
-            logging.info(
-                f"\t Tile {tiles_counter} - score: {score} saved: {tile_filename}"
-            )
 
         if report_path:
             self._save_report(
                 report_path, highest_score_tiles, highest_scaled_score_tiles, filenames
             )
 
-        logging.info(f"{tiles_counter+1} Grid Tiles have been saved.")
+        logger.info(f"{monitor}: {tiles_counter+1} Grid Tiles have been extracted.")
+
+        return highest_score_tiles
 
     # ------- implementation helpers -------
 
     def _tiles_generator(
-        self, slide: Slide, extraction_mask: BinaryMask = BiggestTissueBoxMask()
+        self,
+        slide: Slide,
+        extraction_mask: BinaryMask = BiggestTissueBoxMask(),
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> Tuple[List[Tuple[float, CoordinatePair]], List[Tuple[float, CoordinatePair]]]:
         r"""Calculate the tiles with the highest scores and their extraction coordinates
 
@@ -776,6 +815,10 @@ class ScoreTiler(GridTiler):
         extraction_mask : BinaryMask, optional
             BinaryMask object defining how to compute a binary mask from a Slide.
             Default `BiggestTissueBoxMask`.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Returns
         -------
@@ -797,7 +840,7 @@ class ScoreTiler(GridTiler):
         ValueError
             If ``n_tiles`` is negative.
         """  # noqa
-        all_scores = self._scores(slide, extraction_mask)
+        all_scores = self._scores(slide, extraction_mask, logfreq=logfreq, monitor=monitor)
         scaled_scores = self._scale_scores(all_scores)
 
         sorted_tiles_by_score = sorted(all_scores, key=lambda x: x[0], reverse=True)
@@ -885,7 +928,11 @@ class ScoreTiler(GridTiler):
         return list(zip(scores_scaled, coords))
 
     def _scores(
-        self, slide: Slide, extraction_mask: BinaryMask = BiggestTissueBoxMask()
+        self,
+        slide: Slide,
+        extraction_mask: BinaryMask = BiggestTissueBoxMask(),
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> List[Tuple[float, CoordinatePair]]:
         """Calculate the scores for all the tiles extracted from the ``slide``.
 
@@ -896,6 +943,10 @@ class ScoreTiler(GridTiler):
         extraction_mask : BinaryMask, optional
             BinaryMask object defining how to compute a binary mask from a Slide.
             Default `BiggestTissueBoxMask`.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Returns
         -------
@@ -911,7 +962,14 @@ class ScoreTiler(GridTiler):
         grid_tiles = super()._tiles_generator(slide, extraction_mask)
         scores = []
 
+        tidx = 0
+
         for tile, tile_wsi_coords in grid_tiles:
+
+            if tidx % logfreq == 0:
+                logger.info(f"{monitor}: Scoring tile {tidx}")
+            tidx += 1
+
             score = self.scorer(tile)
             scores.append((score, tile_wsi_coords))
 
