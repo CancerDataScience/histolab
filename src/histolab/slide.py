@@ -25,7 +25,7 @@ import numpy as np
 import openslide
 import large_image  # for .scn slides where openslide fails!
 import PIL
-from PIL.Image import BICUBIC, LANCZOS
+from PIL.Image import BICUBIC
 from io import BytesIO
 from deprecated.sphinx import deprecated
 
