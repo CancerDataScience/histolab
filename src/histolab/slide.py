@@ -15,12 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ------------------------------------------------------------------------
-
-"""Provides the Slide class.
-
-Slide is the main API class for manipulating slide objects.
-"""
-
 import math
 import ntpath
 import os
@@ -107,9 +101,7 @@ class Slide:
         """
         return self._wsi.dimensions
 
-    def extract_tile(
-            self, coords: CoordinatePair, level: int,
-            mpp: float = None, resize_to_exactly: Tuple = None) -> Tile:
+    def extract_tile(self, coords: CoordinatePair, level: int) -> Tile:
         """Extract a tile of the image at the selected level.
 
         Parameters
@@ -118,13 +110,6 @@ class Slide:
             Coordinates at level 0 from which to extract the tile.
         level : int
             Level from which to extract the tile.
-        mpp : float
-            Micron per pixel resolution. Takes precedence over level.
-        resize_to_exactly : Tuple
-            (Width, Height) to resize tile to. Helpful when mpp is used. IT
-            goes without saying that this would result in the returned tile
-            at a different mpp than asked. Helpful in a very limited
-            circumstance.
 
         Returns
         -------
@@ -141,47 +126,18 @@ class Slide:
                 f"{self.dimensions}"
             )
 
-        if mpp is None:
+        coords_level = scale_coordinates(
+            reference_coords=coords,
+            reference_size=self.level_dimensions(level=0),
+            target_size=self.level_dimensions(level=level),
+        )
 
-            coords_level = scale_coordinates(
-                reference_coords=coords,
-                reference_size=self.level_dimensions(level=0),
-                target_size=self.level_dimensions(level=level),
-            )
+        h_l = coords_level.y_br - coords_level.y_ul
+        w_l = coords_level.x_br - coords_level.x_ul
 
-            h_l = coords_level.y_br - coords_level.y_ul
-            w_l = coords_level.x_br - coords_level.x_ul
-
-            image = self._wsi.read_region(
-                location=(coords.x_ul, coords.y_ul), level=level, size=(w_l, h_l)
-            )
-
-        else:
-            # use large image, which has much better support for
-            # getting exact mpp resolutions
-            mm = mpp / 1000
-            image, _ = self._tilesource.getRegion(
-                region=dict(
-                    left=coords.x_ul, top=coords.y_ul,
-                    right=coords.x_br, bottom=coords.y_br,
-                    units='base_pixels'),
-                scale=dict(mm_x=mm, mm_y=mm),
-                format=large_image.tilesource.TILE_FORMAT_PIL,
-                jpegQuality=100,
-            )
-            image = image.convert("RGB")
-
-        # Sometimes when mpp kwarg is used, the image size is going to be
-        # off from what the user expects at that level by a couple of pixels.
-        # Here we allow the use the flexibility to resize
-        if resize_to_exactly is not None:
-            asis = resize_to_exactly[0] == image.size[0]
-            if not asis:
-                image = image.resize(
-                    resize_to_exactly,
-                    BICUBIC if resize_to_exactly[0] >= image.size[0] else LANCZOS
-                )
-
+        image = self._wsi.read_region(
+            location=(coords.x_ul, coords.y_ul), level=level, size=(w_l, h_l)
+        )
         tile = Tile(image, coords, level)
         return tile
 
@@ -209,7 +165,7 @@ class Slide:
 
     @lazyproperty
     def levels(self) -> List[int]:
-        """Return the slide's available levels
+        """Slide's available levels
 
         Returns
         -------
@@ -267,23 +223,23 @@ class Slide:
 
     @lazyproperty
     def name(self) -> str:
-        """Retrieve the slide name without extension.
+        """Slide name without extension.
 
         Returns
         -------
         name : str
         """
         bname = ntpath.basename(self._path)
-        return bname[:bname.rfind(".")]
+        return bname[: bname.rfind(".")]
 
     @lazyproperty
     def processed_path(self) -> str:
-        """Retrieve the path to store processed files generated from the slide.
+        """Path to store the tiles generated from the slide.
 
         Returns
         -------
         str
-            Path to store processed files generated from the slide
+            Path to store the tiles generated from the slide
         """
         return self._processed_path
 
@@ -299,7 +255,7 @@ class Slide:
         return dict(self._wsi.properties)
 
     def resampled_array(self, scale_factor: int = 32) -> np.array:
-        """Retrieve the resampled array from the original slide
+        """Return the resampled array from the original slide
 
         Parameters
         ----------
@@ -341,7 +297,7 @@ class Slide:
 
     @lazyproperty
     def thumbnail(self) -> PIL.Image.Image:
-        """Return the slide thumbnail.
+        """Slide thumbnail.
 
         Returns
         -------
@@ -660,7 +616,10 @@ class SlideSet:
 
     @lazyproperty
     def slides_stats(self) -> dict:
-        """Retrieve statistic/graphs of slides files contained in the dataset.
+        """Statistics for the WSI collection, namely the number of available
+        slides; the slide with the maximum/minimum width; the slide with the
+        maximum/minimum height; the slide with the maximum/minimum size; the average
+        width/height/size of the slides.
 
         Returns
         ----------
