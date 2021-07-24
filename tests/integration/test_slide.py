@@ -9,6 +9,7 @@ import pytest
 
 from histolab.masks import BiggestTissueBoxMask, TissueMask
 from histolab.slide import Slide
+from histolab.util import LARGEIMAGE_INSTALL_PROMPT
 
 from ..fixtures import SVS
 from ..util import load_expectation, load_python_expression
@@ -55,9 +56,9 @@ class Describe_Slide:
             slide._wsi
 
         assert isinstance(err.value, PIL.UnidentifiedImageError)
-        assert (
-            str(err.value) == "Your wsi has something broken inside, a doctor is needed"
-        )
+        broken_err = "Your wsi has something broken inside, a doctor is needed"
+        broken_err += ". " + LARGEIMAGE_INSTALL_PROMPT
+        assert str(err.value) == broken_err
 
     @pytest.mark.parametrize(
         "slide_fixture, tissue_mask, binary_mask, expectation",
