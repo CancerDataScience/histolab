@@ -41,8 +41,8 @@ if LARGEIMAGE_IS_INSTALLED:
     import large_image
 
 IMG_EXT = "png"
-IMG_UPSAMPLE_MODE = PIL.Image.BILINEAR  # TODO: BICUBIC is often better
-IMG_DOWNSAMPLE_MODE = PIL.Image.BILINEAR  # TODO: LANCZOS is often better
+IMG_UPSAMPLE_MODE = PIL.Image.BILINEAR
+IMG_DOWNSAMPLE_MODE = PIL.Image.BILINEAR
 
 
 class Slide:
