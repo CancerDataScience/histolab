@@ -377,10 +377,6 @@ class Slide:
 
     # ------- implementation helpers -------
 
-    @lazyproperty
-    def _metadata(self) -> dict:
-        return self._tilesource.getMetadata()
-
     @staticmethod
     def _bytes2pil(bytesim):
         image_content = BytesIO(bytesim)
@@ -406,6 +402,10 @@ class Slide:
             and 0 <= coords.y_ul < self.dimensions[1]
             and 0 <= coords.y_br < self.dimensions[1]
         )
+
+    @lazyproperty
+    def _metadata(self) -> dict:
+        return self._tilesource.getMetadata()
 
     def _remap_level(self, level: int) -> int:
         """Remap negative index for the given level onto a positive one.
@@ -537,6 +537,19 @@ class Slide:
         )
 
     @lazyproperty
+    def _tilesource(self) -> Union[openslide.OpenSlide, openslide.ImageSlide]:
+        """Open the slide and returns a large_image tile source object
+
+        Returns
+        -------
+        source : large_image TileSource object
+            An TileSource object representing a whole-slide image.
+        """
+        assert self._use_largeimage, LARGEIMAGE_INSTALL_PROMPT
+        source = large_image.getTileSource(self._path)
+        return source
+
+    @lazyproperty
     def _wsi(self) -> Union[openslide.OpenSlide, openslide.ImageSlide]:
         """Open the slide and returns an openslide object
 
@@ -561,19 +574,6 @@ class Slide:
             msg += f"\n{LARGEIMAGE_INSTALL_PROMPT}"
             raise HistolabException(msg)
         return slide
-
-    @lazyproperty
-    def _tilesource(self) -> Union[openslide.OpenSlide, openslide.ImageSlide]:
-        """Open the slide and returns a large_image tile source object
-
-        Returns
-        -------
-        source : large_image TileSource object
-            An TileSource object representing a whole-slide image.
-        """
-        assert self._use_largeimage, LARGEIMAGE_INSTALL_PROMPT
-        source = large_image.getTileSource(self._path)
-        return source
 
 
 class SlideSet:
