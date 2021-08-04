@@ -31,14 +31,21 @@ from .filters.compositions import FiltersComposition
 from .masks import BinaryMask
 from .tile import Tile
 from .types import CoordinatePair
-from .util import _check_largeimage, lazyproperty
+from .util import lazyproperty
 
-LARGEIMAGE_IS_INSTALLED, LARGEIMAGE_INSTALL_PROMPT = _check_largeimage()
-
-if LARGEIMAGE_IS_INSTALLED:
+try:
+    import large_image
     from io import BytesIO
 
-    import large_image
+    LARGEIMAGE_IS_INSTALLED = True
+    LARGEIMAGE_INSTALL_PROMPT = ""
+
+except (ModuleNotFoundError, ImportError):
+    LARGEIMAGE_IS_INSTALLED = False
+    LARGEIMAGE_INSTALL_PROMPT = (
+        "It maybe a good idea to install large_image to handle this. "
+        "See: https://github.com/girder/large_image"
+    )
 
 IMG_EXT = "png"
 IMG_UPSAMPLE_MODE = PIL.Image.BILINEAR
