@@ -13,7 +13,7 @@ import pytest
 from PIL import ImageShow
 
 from histolab.exceptions import LevelError
-from histolab.slide import Slide, SlideSet, LARGEIMAGE_INSTALL_PROMPT
+from histolab.slide import Slide, SlideSet
 from histolab.types import CP, Region
 from histolab.util import regions_from_binary_mask
 
@@ -111,7 +111,8 @@ class Describe_Slide:
 
         assert isinstance(err.value, NotImplementedError)
         assert str(err.value) == (
-            "Unknown scan magnification! " + LARGEIMAGE_INSTALL_PROMPT
+            "Unknown scan magnification! "
+            "Please set use_largeimage to True when instantiating Slide."
         )
 
     def it_has_largeimage_tilesource(self, tmpdir):
@@ -197,9 +198,10 @@ class Describe_Slide:
             slide._wsi
 
         assert isinstance(err.value, PIL.UnidentifiedImageError)
-        broken_err = "Your wsi has something broken inside, a doctor is needed"
-        broken_err += ". " + LARGEIMAGE_INSTALL_PROMPT
-        assert str(err.value) == broken_err
+        assert str(err.value) == (
+            "Your wsi has something broken inside, a doctor is needed. "
+            "Please set use_largeimage to True when instantiating Slide."
+        )
 
     @pytest.mark.parametrize(
         "use_largeimage",
