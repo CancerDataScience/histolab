@@ -615,12 +615,15 @@ class SlideSet:
         slides_path: str,
         processed_path: str,
         valid_extensions: List[str],
+        *,
         keep_slides: List[str] = None,
+        slide_kwargs: dict = None,
     ) -> None:
         self._slides_path = slides_path
         self._processed_path = processed_path
         self._valid_extensions = valid_extensions
         self._keep_slides = keep_slides
+        self._slide_kwargs = slide_kwargs
 
     def __iter__(self) -> Iterator[Slide]:
         """Slides of the slideset
@@ -638,7 +641,11 @@ class SlideSet:
             slide_names = [name for name in slide_names if name in self._keep_slides]
         return iter(
             [
-                Slide(os.path.join(self._slides_path, name), self._processed_path)
+                Slide(
+                    os.path.join(self._slides_path, name),
+                    self._processed_path,
+                    **self._slide_kwargs
+                )
                 for name in slide_names
             ]
         )
