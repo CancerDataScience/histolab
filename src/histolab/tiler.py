@@ -917,9 +917,11 @@ class ScoreTiler(GridTiler):
         extraction_mask: BinaryMask = BiggestTissueBoxMask(),
         report_path: str = None,
         log_level: str = "INFO",
+        save_tiles: bool = True,
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> None:
-        """Extract grid tiles and save them to disk, according to a scoring function and
-        following this filename pattern:
+        """Extract grid tiles according to a scoring function, following this filename pattern:
         `{prefix}tile_{tiles_counter}_level{level}_{x_ul_wsi}-{y_ul_wsi}-{x_br_wsi}-{y_br_wsi}{suffix}`
 
         Save a CSV report file with the saved tiles and the associated score.
@@ -935,6 +937,12 @@ class ScoreTiler(GridTiler):
             Path to the CSV report. If None, no report will be saved
         log_level: str, {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
             Threshold level for the log messages. Default "INFO"
+        save_tiles: bool, optional
+            Save the actual tile images to disk? Default: True.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Raises
         ------
@@ -950,7 +958,7 @@ class ScoreTiler(GridTiler):
         self._validate_tile_size(slide)
 
         highest_score_tiles, highest_scaled_score_tiles = self._tiles_generator(
-            slide, extraction_mask
+            slide, extraction_mask, logfreq=logfreq, monitor=monitor
         )
 
         tiles_counter = 0
@@ -964,23 +972,32 @@ class ScoreTiler(GridTiler):
                 level=self.level if self.mpp is None else None,
             )
             tile_filename = self._tile_filename(tile_wsi_coords, tiles_counter)
-            tile.save(os.path.join(slide.processed_path, tile_filename))
+            if save_tiles:
+                tile.save(os.path.join(slide.processed_path, tile_filename))
+                if tiles_counter % logfreq == 0:
+                    logger.info(
+                        f"{monitor}: Tile {tiles_counter} - score: {score}"
+                        f" saved: {tile_filename}"
+                    )
             filenames.append(tile_filename)
-            logger.info(
-                f"\t Tile {tiles_counter} - score: {score} saved: {tile_filename}"
-            )
 
         if report_path:
             self._save_report(
                 report_path, highest_score_tiles, highest_scaled_score_tiles, filenames
             )
 
-        logger.info(f"{tiles_counter+1} Grid Tiles have been saved.")
+        logger.info(f"{monitor}: {tiles_counter+1} Grid Tiles have been extracted.")
+
+        return highest_score_tiles
 
     # ------- implementation helpers -------
 
     def _tiles_generator(
-        self, slide: Slide, extraction_mask: BinaryMask = BiggestTissueBoxMask()
+        self,
+        slide: Slide,
+        extraction_mask: BinaryMask = BiggestTissueBoxMask(),
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> Tuple[List[Tuple[float, CoordinatePair]], List[Tuple[float, CoordinatePair]]]:
         r"""Calculate the tiles with the highest scores and their extraction coordinates
 
@@ -991,6 +1008,10 @@ class ScoreTiler(GridTiler):
         extraction_mask : BinaryMask, optional
             BinaryMask object defining how to compute a binary mask from a Slide.
             Default `BiggestTissueBoxMask`.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Returns
         -------
@@ -1012,7 +1033,9 @@ class ScoreTiler(GridTiler):
         ValueError
             If ``n_tiles`` is negative.
         """  # noqa
-        all_scores = self._scores(slide, extraction_mask)
+        all_scores = self._scores(
+            slide, extraction_mask, logfreq=logfreq, monitor=monitor
+        )
         scaled_scores = self._scale_scores(all_scores)
 
         sorted_tiles_by_score = sorted(all_scores, key=lambda x: x[0], reverse=True)
@@ -1044,6 +1067,8 @@ class ScoreTiler(GridTiler):
 
         Parameters
         ----------
+        slide : Slide
+            The slide to extract the tiles from.
         report_path : str
             Path to the report
         highest_score_tiles : List[Tuple[float, CoordinatePair]]
@@ -1098,7 +1123,11 @@ class ScoreTiler(GridTiler):
         return list(zip(scores_scaled, coords))
 
     def _scores(
-        self, slide: Slide, extraction_mask: BinaryMask = BiggestTissueBoxMask()
+        self,
+        slide: Slide,
+        extraction_mask: BinaryMask = BiggestTissueBoxMask(),
+        logfreq: int = 32,
+        monitor: str = "",
     ) -> List[Tuple[float, CoordinatePair]]:
         """Calculate the scores for all the tiles extracted from the ``slide``.
 
@@ -1109,6 +1138,10 @@ class ScoreTiler(GridTiler):
         extraction_mask : BinaryMask, optional
             BinaryMask object defining how to compute a binary mask from a Slide.
             Default `BiggestTissueBoxMask`.
+        logfreq : int
+            How frequently to log the tile scoring.
+        monitor : str
+            prefix to add to logging messages
 
         Returns
         -------
@@ -1124,7 +1157,14 @@ class ScoreTiler(GridTiler):
         grid_tiles = super()._tiles_generator(slide, extraction_mask)
         scores = []
 
+        tidx = 0
+
         for tile, tile_wsi_coords in grid_tiles:
+
+            if tidx % logfreq == 0:
+                logger.info(f"{monitor}: Scoring tile {tidx}")
+            tidx += 1
+
             score = self.scorer(tile)
             scores.append((score, tile_wsi_coords))
 
