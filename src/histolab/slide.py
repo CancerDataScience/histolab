@@ -26,7 +26,12 @@ import openslide
 import PIL
 from skimage.measure import find_contours
 
-from .exceptions import HistolabException, LevelError
+from .exceptions import (
+    HistolabException,
+    LevelError,
+    MayNeedLargeImageError,
+    TileSizeOrCoordinatesError,
+)
 from .filters.compositions import FiltersComposition
 from .masks import BinaryMask
 from .tile import Tile
@@ -103,7 +108,7 @@ class Slide:
         ):
             return 1e4 / float(self.properties["tiff.XResolution"])
 
-        raise NotImplementedError(
+        raise MayNeedLargeImageError(
             "Unknown scan magnification! This slide format may be best "
             "handled using the large_image module. Consider setting "
             "use_largeimage to True when instantiating this Slide."
@@ -157,7 +162,7 @@ class Slide:
         if not self._has_valid_coords(coords):
             # OpenSlide doesn't complain if the coordinates for extraction are wrong,
             # but it returns an odd image.
-            raise ValueError(
+            raise TileSizeOrCoordinatesError(
                 f"Extraction Coordinates {coords} not valid for slide with dimensions "
                 f"{self.dimensions}"
             )
@@ -545,7 +550,7 @@ class Slide:
             Thumbnail size
         """
         if self._use_largeimage:
-            raise NotImplementedError(
+            raise MayNeedLargeImageError(
                 "When use_largeimage is set to True, the thumbnail is fetched "
                 "by the large_image module. Please use thumbnail.size instead."
             )
@@ -567,7 +572,7 @@ class Slide:
             An TileSource object representing a whole-slide image.
         """
         if not self._use_largeimage:
-            raise ValueError(
+            raise MayNeedLargeImageError(
                 "This property uses the large_image module. Please set "
                 "use_largeimage to True when instantiating this Slide."
             )

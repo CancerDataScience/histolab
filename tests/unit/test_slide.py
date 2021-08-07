@@ -12,7 +12,7 @@ import PIL
 import pytest
 from PIL import ImageShow
 
-from histolab.exceptions import LevelError
+from histolab.exceptions import LevelError, MayNeedLargeImageError
 from histolab.slide import Slide, SlideSet
 from histolab.types import CP, Region
 from histolab.util import regions_from_binary_mask
@@ -106,10 +106,10 @@ class Describe_Slide:
     def it_raises_error_with_unknown_mpp(self, tmpdir):
         slide, _ = base_test_slide(tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240)
 
-        with pytest.raises(NotImplementedError) as err:
+        with pytest.raises(MayNeedLargeImageError) as err:
             slide.base_mpp
 
-        assert isinstance(err.value, NotImplementedError)
+        assert isinstance(err.value, MayNeedLargeImageError)
         assert str(err.value) == (
             "Unknown scan magnification! This slide format may be best "
             "handled using the large_image module. Consider setting "
@@ -126,10 +126,10 @@ class Describe_Slide:
     def it_raises_error_if_tilesource_and_not_use_largeimage(self):
         slide = Slide("/a/b/foo", "processed")
 
-        with pytest.raises(ValueError) as err:
+        with pytest.raises(MayNeedLargeImageError) as err:
             slide._tilesource
 
-        assert isinstance(err.value, ValueError)
+        assert isinstance(err.value, MayNeedLargeImageError)
         assert str(err.value) == (
             "This property uses the large_image module. Please set "
             "use_largeimage to True when instantiating this Slide."
@@ -200,10 +200,10 @@ class Describe_Slide:
     def it_raises_error_if_thumbnail_size_and_use_largeimage(self):
         slide = Slide("/a/b/foo", "processed", use_largeimage=True)
 
-        with pytest.raises(NotImplementedError) as err:
+        with pytest.raises(MayNeedLargeImageError) as err:
             slide._thumbnail_size
 
-        assert isinstance(err.value, NotImplementedError)
+        assert isinstance(err.value, MayNeedLargeImageError)
         assert str(err.value) == (
             "When use_largeimage is set to True, the thumbnail is fetched "
             "by the large_image module. Please use thumbnail.size instead."

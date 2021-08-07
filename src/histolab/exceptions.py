@@ -33,13 +33,17 @@ class HistolabException(Exception):
         return ""
 
 
-class LevelError(HistolabException):
-    """Raised when a requested level is not available"""
-
-
 class FilterCompositionError(HistolabException):
     """Raised when a filter composition for the class is not available"""
 
 
-class TileSizeError(HistolabException):
-    """Raised when the tile size is larger than the slide size"""
+class LevelError(HistolabException):
+    """Raised when a requested level is not available"""
+
+
+class MayNeedLargeImageError(HistolabException):
+    """Raised when a method likely requires usage of large_image module"""
+
+
+class TileSizeOrCoordinatesError(HistolabException):
+    """Raised when the tile size or coordinates are incorrect relative to slide."""
