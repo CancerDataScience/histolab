@@ -26,7 +26,9 @@ import openslide
 import PIL
 from skimage.measure import find_contours
 
-from .exceptions import HistolabException, LevelError, MayNeedLargeImageError
+from .exceptions import (
+    HistolabException, LevelError, MayNeedLargeImageError, TileSizeOrCoordinatesError
+)
 from .filters.compositions import FiltersComposition
 from .masks import BinaryMask
 from .tile import Tile
@@ -157,7 +159,7 @@ class Slide:
         if not self._has_valid_coords(coords):
             # OpenSlide doesn't complain if the coordinates for extraction are wrong,
             # but it returns an odd image.
-            raise ValueError(
+            raise TileSizeOrCoordinatesError(
                 f"Extraction Coordinates {coords} not valid for slide with dimensions "
                 f"{self.dimensions}"
             )

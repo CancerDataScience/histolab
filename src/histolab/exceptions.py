@@ -45,5 +45,5 @@ class MayNeedLargeImageError(HistolabException):
     """Raised when a method likely requires usage of large_image module"""
 
 
-class TileSizeError(HistolabException):
-    """Raised when the tile size is larger than the slide size"""
+class TileSizeOrCoordinatesError(HistolabException):
+    """Raised when the tile size or coordinates are incorrect relative to slide."""

@@ -25,7 +25,7 @@ from typing import List, Tuple
 import numpy as np
 import PIL
 
-from .exceptions import LevelError, TileSizeError
+from .exceptions import LevelError, TileSizeOrCoordinatesError
 from .masks import BiggestTissueBoxMask, BinaryMask
 from .scorer import Scorer
 from .slide import Slide
@@ -220,7 +220,7 @@ class Tiler(Protocol):
             If the tile size is larger than the slide size
         """
         if not self._has_valid_tile_size(slide):
-            raise TileSizeError(
+            raise TileSizeOrCoordinatesError(
                 f"Tile size {self.tile_size} is larger than slide size "
                 f"{slide.level_dimensions(self.level)} at level {self.level}"
             )
@@ -500,7 +500,7 @@ class GridTiler(Tiler):
                     mpp=self.mpp,
                     level=self.level if self.mpp is None else None,
                 )
-            except ValueError:
+            except TileSizeOrCoordinatesError:
                 continue
 
             if not self.check_tissue or tile.has_enough_tissue(self.tissue_percent):
@@ -767,7 +767,7 @@ class RandomTiler(Tiler):
                     mpp=self.mpp,
                     level=self.level if self.mpp is None else None,
                 )
-            except ValueError:
+            except TileSizeOrCoordinatesError:
                 iteration -= 1
                 continue
 
