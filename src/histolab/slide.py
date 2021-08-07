@@ -27,7 +27,10 @@ import PIL
 from skimage.measure import find_contours
 
 from .exceptions import (
-    HistolabException, LevelError, MayNeedLargeImageError, TileSizeOrCoordinatesError
+    HistolabException,
+    LevelError,
+    MayNeedLargeImageError,
+    TileSizeOrCoordinatesError,
 )
 from .filters.compositions import FiltersComposition
 from .masks import BinaryMask
