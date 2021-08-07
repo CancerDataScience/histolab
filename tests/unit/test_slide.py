@@ -36,18 +36,21 @@ from ..unitutil import (
 
 class Describe_Slide:
     @pytest.mark.parametrize(
-        "slide_path, processed_path",
+        "slide_path, processed_path, use_largeimage",
         [
-            ("/foo/bar/myslide.svs", "/foo/bar/myslide/processed"),
-            (Path("/foo/bar/myslide.svs"), Path("/foo/bar/myslide/processed")),
+            ("/foo/bar/myslide.svs", "/foo/bar/myslide/processed", False),
+            ("/foo/bar/myslide.svs", "/foo/bar/myslide/processed", True),
+            (Path("/foo/bar/myslide.svs"), Path("/foo/bar/myslide/processed"), False),
         ],
     )
-    def it_constructs_from_args(self, request, slide_path, processed_path):
+    def it_constructs_from_args(
+        self, request, slide_path, processed_path, use_largeimage
+    ):
         _init_ = initializer_mock(request, Slide)
 
-        slide = Slide(slide_path, processed_path)
+        slide = Slide(slide_path, processed_path, use_largeimage=use_largeimage)
 
-        _init_.assert_called_once_with(ANY, slide_path, processed_path)
+        _init_.assert_called_once_with(ANY, slide_path, processed_path, use_largeimage)
         assert isinstance(slide, Slide)
 
     def but_it_has_wrong_slide_path_type(self):
@@ -100,12 +103,55 @@ class Describe_Slide:
 
         assert name == expected_value
 
+    def it_raises_error_with_unknown_mpp(self, tmpdir):
+        slide, _ = base_test_slide(tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240)
+
+        with pytest.raises(NotImplementedError) as err:
+            slide.base_mpp
+
+        assert isinstance(err.value, NotImplementedError)
+        assert str(err.value) == (
+            "Unknown scan magnification! This slide format may be best "
+            "handled using the large_image module. Consider setting "
+            "use_largeimage to True when instantiating this Slide."
+        )
+
+    def it_has_largeimage_tilesource(self, tmpdir):
+        slide, _ = base_test_slide(
+            tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240, use_largeimage=True
+        )
+
+        assert slide._tilesource.name == "pilfile"
+
+    def it_raises_error_if_tilesource_and_not_use_largeimage(self):
+        slide = Slide("/a/b/foo", "processed")
+
+        with pytest.raises(ValueError) as err:
+            slide._tilesource
+
+        assert isinstance(err.value, ValueError)
+        assert str(err.value) == (
+            "This property uses the large_image module. Please set "
+            "use_largeimage to True when instantiating this Slide."
+        )
+
     def it_knows_its_dimensions(self, tmpdir):
         slide, _ = base_test_slide(tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240)
 
         slide_dims = slide.dimensions
 
         assert slide_dims == (500, 500)
+
+    def it_raises_error_if_bad_args_for_extract_tile(self, tmpdir):
+        slide, _ = base_test_slide(
+            tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240, use_largeimage=True
+        )
+
+        with pytest.raises(ValueError) as err:
+            slide.extract_tile(CP(0, 10, 0, 10), (10, 10), level=None, mpp=None)
+
+        assert isinstance(err.value, ValueError)
+        assert str(err.value) == "either level or mpp must be provided!"
 
     def it_knows_its_resampled_dimensions(self, dimensions_):
         """This test prove that given the dimensions (mock object here), it does
@@ -151,6 +197,18 @@ class Describe_Slide:
 
         assert thumb_size == (500, 500)
 
+    def it_raises_error_if_thumbnail_size_and_use_largeimage(self):
+        slide = Slide("/a/b/foo", "processed", use_largeimage=True)
+
+        with pytest.raises(NotImplementedError) as err:
+            slide._thumbnail_size
+
+        assert isinstance(err.value, NotImplementedError)
+        assert str(err.value) == (
+            "When use_largeimage is set to True, the thumbnail is fetched "
+            "by the large_image module. Please use thumbnail.size instead."
+        )
+
     def it_creates_a_correct_slide_object(self, tmpdir):
         slide, _ = base_test_slide(tmpdir, PILIMG.RGBA_COLOR_50X50_155_0_0)
 
@@ -176,12 +234,23 @@ class Describe_Slide:
             slide._wsi
 
         assert isinstance(err.value, PIL.UnidentifiedImageError)
-        assert (
-            str(err.value) == "Your wsi has something broken inside, a doctor is needed"
+        assert str(err.value) == (
+            "This slide may be corrupt or have a non-standard format not "
+            "handled by the openslide and PIL libraries. Consider setting "
+            "use_largeimage to True when instantiating this Slide."
         )
 
-    def it_can_resample_itself(self, tmpdir, resampled_dims_):
-        slide, _ = base_test_slide(tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240)
+    @pytest.mark.parametrize(
+        "use_largeimage",
+        [
+            (False,),
+            (True,),
+        ],
+    )
+    def it_can_resample_itself(self, tmpdir, resampled_dims_, use_largeimage):
+        slide, _ = base_test_slide(
+            tmpdir, PILIMG.RGBA_COLOR_500X500_155_249_240, use_largeimage=use_largeimage
+        )
         resampled_dims_.return_value = (100, 200, 300, 400)
 
         _resample = slide._resample(32)
@@ -225,12 +294,23 @@ class Describe_Slide:
 
         assert type(scaled_image) == PIL.Image.Image
 
-    def it_knows_its_thumbnail(self, tmpdir, resampled_dims_):
+    @pytest.mark.parametrize(
+        "use_largeimage",
+        [
+            (False,),
+            (True,),
+        ],
+    )
+    def it_knows_its_thumbnail(self, tmpdir, resampled_dims_, use_largeimage):
         tmp_path_ = tmpdir.mkdir("myslide")
         image = PILIMG.RGBA_COLOR_500X500_155_249_240
         image.save(os.path.join(tmp_path_, "mywsi.png"), "PNG")
         slide_path = os.path.join(tmp_path_, "mywsi.png")
-        slide = Slide(slide_path, os.path.join(tmp_path_, "processed"))
+        slide = Slide(
+            slide_path,
+            os.path.join(tmp_path_, "processed"),
+            use_largeimage=use_largeimage,
+        )
         resampled_dims_.return_value = (100, 200, 300, 400)
 
         thumb = slide.thumbnail

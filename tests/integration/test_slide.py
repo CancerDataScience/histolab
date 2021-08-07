@@ -7,6 +7,7 @@ import numpy as np
 import PIL
 import pytest
 
+from histolab.exceptions import HistolabException
 from histolab.masks import BiggestTissueBoxMask, TissueMask
 from histolab.slide import Slide
 
@@ -24,6 +25,36 @@ class Describe_Slide:
 
         assert name == ntpath.basename(SVS.CMU_1_SMALL_REGION).split(".")[0]
 
+    @pytest.mark.parametrize(
+        "use_largeimage, slide_props",
+        [
+            (True, None),
+            (False, None),
+            (False, {"aperio.MPP": 0.499}),
+            (
+                False,
+                {
+                    "tiff.XResolution": 20040.080160320642,
+                    "tiff.ResolutionUnit": "centimeter",
+                },
+            ),
+        ],
+    )
+    def it_knows_its_base_mpp(self, use_largeimage, slide_props):
+        slide = Slide(
+            SVS.CMU_1_SMALL_REGION,
+            os.path.join(SVS.CMU_1_SMALL_REGION, "processed"),
+            use_largeimage=use_largeimage,
+        )
+        if slide_props:
+            del slide.properties["openslide.mpp-x"]
+            del slide.properties["aperio.MPP"]
+            slide.properties.update(slide_props)
+
+        mpp = slide.base_mpp
+
+        np.testing.assert_almost_equal(mpp, 0.499)
+
     def it_calculate_resampled_nparray_from_small_region_svs_image(self):
         slide = Slide(
             SVS.CMU_1_SMALL_REGION, os.path.join(SVS.CMU_1_SMALL_REGION, "processed")
@@ -36,9 +67,18 @@ class Describe_Slide:
         )
         np.testing.assert_almost_equal(resampled_array, expected_value)
 
-    def it_knows_the_right_slide_dimension(self):
+    @pytest.mark.parametrize(
+        "use_largeimage",
+        [
+            (False,),
+            (True,),
+        ],
+    )
+    def it_knows_the_right_slide_dimension(self, use_largeimage):
         slide = Slide(
-            SVS.CMU_1_SMALL_REGION, os.path.join(SVS.CMU_1_SMALL_REGION, "processed")
+            SVS.CMU_1_SMALL_REGION,
+            os.path.join(SVS.CMU_1_SMALL_REGION, "processed"),
+            use_largeimage=use_largeimage,
         )
         image = PIL.Image.open(SVS.CMU_1_SMALL_REGION)
 
@@ -55,8 +95,25 @@ class Describe_Slide:
             slide._wsi
 
         assert isinstance(err.value, PIL.UnidentifiedImageError)
-        assert (
-            str(err.value) == "Your wsi has something broken inside, a doctor is needed"
+        assert str(err.value) == (
+            "This slide may be corrupt or have a non-standard format not "
+            "handled by the openslide and PIL libraries. Consider setting "
+            "use_largeimage to True when instantiating this Slide."
+        )
+
+    def it_raises_miscellaneous_error(self):
+        slide = Slide(SVS.BROKEN, os.path.join(SVS.BROKEN, "processed"))
+
+        with pytest.raises(HistolabException) as err:
+            slide._path = None
+            slide._wsi
+
+        assert isinstance(err.value, HistolabException)
+        assert str(err.value) == (
+            "ArgumentError(\"argument 1: <class 'TypeError'>: Incorrect type\")"
+            ". This slide may be corrupt or have a non-standard format not "
+            "handled by the openslide and PIL libraries. Consider setting "
+            "use_largeimage to True when instantiating this Slide."
         )
 
     @pytest.mark.parametrize(
