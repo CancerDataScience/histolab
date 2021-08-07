@@ -18,13 +18,38 @@ from ..util import expand_tests_report, load_expectation
 
 class DescribeRandomTiler:
     @pytest.mark.parametrize(
-        "fixture_slide, binary_mask, tile_size, level, check_tissue, expectation",
+        "fixture_slide, "
+        "binary_mask, "
+        "tile_size, "
+        "level, "
+        "outline, "
+        "check_tissue, "
+        "expectation",
         [
             (
                 SVS.CMU_1_SMALL_REGION,
                 BiggestTissueBoxMask(),
                 (512, 512),
                 0,
+                "red",
+                False,
+                "tiles-location-images/cmu-1-small-region-tl-random-BTB-false-512x512",
+            ),
+            (
+                SVS.CMU_1_SMALL_REGION,
+                BiggestTissueBoxMask(),
+                (512, 512),
+                0,
+                ["red", "red"],
+                False,
+                "tiles-location-images/cmu-1-small-region-tl-random-BTB-false-512x512",
+            ),
+            (
+                SVS.CMU_1_SMALL_REGION,
+                BiggestTissueBoxMask(),
+                (512, 512),
+                0,
+                [(255, 0, 0), (255, 0, 0)],
                 False,
                 "tiles-location-images/cmu-1-small-region-tl-random-BTB-false-512x512",
             ),
@@ -33,6 +58,7 @@ class DescribeRandomTiler:
                 TissueMask(),
                 (512, 512),
                 -2,
+                "red",
                 False,
                 "tiles-location-images/tcga-cr-7395-01a-01-ts1-tl-random-TM-f-512x512",
             ),
@@ -41,6 +67,7 @@ class DescribeRandomTiler:
                 BiggestTissueBoxMask(),
                 (512, 530),
                 0,
+                "red",
                 False,
                 "tiles-location-images/tcga-cr-7395-01a-01-ts1-tl-random-BTB-f-512x530",
             ),
@@ -49,6 +76,7 @@ class DescribeRandomTiler:
                 TissueMask(),
                 (512, 530),
                 0,
+                "red",
                 True,
                 "tiles-location-images/cmu-1-small-region-tl-random-TM-true-512x530",
             ),
@@ -57,6 +85,7 @@ class DescribeRandomTiler:
                 TissueMask(),
                 (128, 128),
                 0,
+                "red",
                 True,
                 "tiles-location-images/tcga-cr-7395-01a-01-ts1-tl-random-TM-t-128x128",
             ),
@@ -65,6 +94,7 @@ class DescribeRandomTiler:
                 TissueMask(),
                 (10, 10),
                 0,
+                "red",
                 True,
                 "tiles-location-images/kidney-48-5-random-TM-true-10x10",
             ),
@@ -73,6 +103,7 @@ class DescribeRandomTiler:
                 BiggestTissueBoxMask(),
                 (20, 20),
                 0,
+                "red",
                 False,
                 "tiles-location-images/kidney-48-5-random-TM-false-20x20",
             ),
@@ -85,6 +116,7 @@ class DescribeRandomTiler:
         binary_mask,
         tile_size,
         level,
+        outline,
         check_tissue,
         expectation,
     ):
@@ -102,7 +134,10 @@ class DescribeRandomTiler:
         )
 
         tiles_location_img = random_tiles_extractor.locate_tiles(
-            slide, binary_mask, scale_factor=10
+            slide,
+            binary_mask,
+            scale_factor=10,
+            outline=outline,
         )
 
         # --- Expanding test report with actual and expected images ---

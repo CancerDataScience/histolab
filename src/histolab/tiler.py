@@ -20,7 +20,8 @@ import csv
 import logging
 import os
 from abc import abstractmethod
-from typing import List, Tuple
+from itertools import zip_longest
+from typing import Iterable, List, Tuple, Union
 
 import numpy as np
 import PIL
@@ -73,7 +74,9 @@ class Tiler(Protocol):
         extraction_mask: BinaryMask = BiggestTissueBoxMask(),
         scale_factor: int = 32,
         alpha: int = 128,
-        outline: str = "red",
+        outline: Union[str, Iterable[str], Iterable[Tuple[int]]] = "red",
+        linewidth: int = 1,
+        tiles: Iterable[Tile] = None,
     ) -> PIL.Image.Image:
         """Draw tile box references on a rescaled version of the slide
 
@@ -84,12 +87,31 @@ class Tiler(Protocol):
         extraction_mask : BinaryMask, optional
             BinaryMask object defining how to compute a binary mask from a Slide.
             Default `BiggestTissueBoxMask`
-        scale_factor: int
+        scale_factor: int, optional
             Scaling factor for the returned image. Default is 32.
-        alpha: int
-            The alpha level to be applied to the rescaled slide, default to 128.
-        outline: str
-            The outline color for the tile annotations, default to 'red'.
+        alpha: int, optional
+            The alpha level to be applied to the rescaled slide. Default is 128.
+        outline: Union[str, Iterable[str], Iterable[Tuple[int]]], optional
+            The outline color for the tile annotations. Default is 'red'.
+            You can provide this as a string compatible with matplotlib, or
+            you can provide a list of the same length as the tiles, where
+            each color is your assigned color for the corresponding individual
+            tile. This list can be a list of matplotlib-style string colors, or
+            it maybe a list of tuples of ints in the [0, 255] range, each of
+            length 3, representing the red, green and blue color for each tile.
+            For example, if you have two tiles that you want to be colored
+            yellow, you can pass this argument as any of the following ..
+            - 'yellow'
+            - ['yellow', 'yellow']
+            - [(255, 255, 0), (255, 255, 0)]
+        linewidth: int, optional
+            Thickness of line used to draw tiles. Default is 1.
+        tiles: Iterable[Tile], optional
+            Tiles to visualize. Will be extracted if None. Default is None.
+            You may decide to provide this argument if you do not want the
+            tiles to be re-extracted for visualization if you already have
+            the tiles in hand from, say, the ``_tiles_generator`` method of
+            the ``Tiler`` class.
 
         Returns
         -------
@@ -100,15 +122,19 @@ class Tiler(Protocol):
         img.putalpha(alpha)
         draw = PIL.ImageDraw.Draw(img)
 
-        tiles = (
-            self._tiles_generator(slide, extraction_mask)[0]
-            if isinstance(self, ScoreTiler)
-            else self._tiles_generator(slide, extraction_mask)
-        )
+        if tiles is None:
+            tiles = (
+                self._tiles_generator(slide, extraction_mask)[0]
+                if isinstance(self, ScoreTiler)
+                else self._tiles_generator(slide, extraction_mask)
+            )
         tiles_coords = (tile[1] for tile in tiles)
-        for coords in tiles_coords:
+
+        for coords, one_outline in self._tile_coords_and_outline_generator(
+            tiles_coords, outline
+        ):
             rescaled = scale_coordinates(coords, slide.dimensions, img.size)
-            draw.rectangle(tuple(rescaled), outline=outline)
+            draw.rectangle(tuple(rescaled), outline=one_outline, width=linewidth)
         return img
 
     # ------- implementation helpers -------
@@ -131,6 +157,45 @@ class Tiler(Protocol):
             self.tile_size[0] <= slide.level_dimensions(self.level)[0]
             and self.tile_size[1] <= slide.level_dimensions(self.level)[1]
         )
+
+    @staticmethod
+    def _tile_coords_and_outline_generator(
+        tiles_coords: Iterable[CoordinatePair],
+        outlines: Union[str, List[str], List[Tuple[int]]],
+    ) -> Union[str, Tuple[int]]:
+        """Zip tile coordinates and outlines from tile and outline iterators.
+
+        Parameters
+        ----------
+        tiles_coords: Iterable[CoordinatePair]
+            Coordinates referring to the upper left and lower right corners.
+        outlines: Union[str, Iterable[str], Iterable[Tuple[int]]]
+            See docstring for ``locate_tiles`` for details.
+
+        Yields
+        -------
+        CoordinatePair
+            Coordinates referring to the upper left and lower right corners.
+        Union[str, Tuple[int]]
+            Fixed outline depending on user input to used by method ``locate_tiles``.
+        """
+        if isinstance(outlines, str):
+            for coords in tiles_coords:
+                yield coords, outlines
+
+        elif hasattr(outlines, "__iter__"):
+            for coords, one_outline in zip_longest(tiles_coords, outlines):
+                if any(j is None for j in (coords, one_outline)):
+                    raise ValueError(
+                        "There should be as many outlines as there are tiles!"
+                    )
+                yield coords, one_outline
+
+        else:
+            raise ValueError(
+                "The parameter ``outline`` should be of type: "
+                "str, Iterable[str], or Iterable[List[int]]"
+            )
 
     def _tile_filename(
         self, tile_wsi_coords: CoordinatePair, tiles_counter: int
