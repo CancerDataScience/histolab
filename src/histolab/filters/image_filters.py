@@ -1194,9 +1194,11 @@ class RedPenFilter(ImageFilter):
         >>> red_pen_filter = RedPenFilter()
         >>> image_no_red = red_pen_filter(image_rgb)
     """
+    def __init__(self, applyfilter=True):
+        self.applyfilter = applyfilter
 
     def __call__(self, img: PIL.Image.Image):
-        return F.red_pen_filter(img)
+        return F.red_pen_filter(img, applyfilter=self.applyfilter)
 
 
 class GreenFilter(ImageFilter):
@@ -1259,7 +1261,6 @@ class GreenPenFilter(ImageFilter):
     PIL.Image.Image
         Image the green pen marks filtered out.
 
-
     Example:
         >>> from PIL import Image
         >>> from histolab.filters.image_filters import GreenPenFilter
@@ -1268,8 +1269,11 @@ class GreenPenFilter(ImageFilter):
         >>> image_no_green = green_pen_filter(image_rgb)
     """  # noqa
 
+    def __init__(self, applyfilter=True):
+        self.applyfilter = applyfilter
+
     def __call__(self, img: PIL.Image.Image) -> PIL.Image.Image:
-        return F.green_pen_filter(img)
+        return F.green_pen_filter(img, applyfilter=self.applyfilter)
 
 
 class BlueFilter(ImageFilter):
@@ -1329,7 +1333,6 @@ class BluePenFilter(ImageFilter):
     np.ndarray
         NumPy array representing the mask with the blue pen marks filtered out.
 
-
     Example:
         >>> from PIL import Image
         >>> from histolab.filters.image_filters import BluePenFilter
@@ -1338,8 +1341,11 @@ class BluePenFilter(ImageFilter):
         >>> image_no_blue = blue_pen_filter(image_rgb)
     """  # noqa
 
+    def __init__(self, applyfilter=True):
+        self.applyfilter = applyfilter
+
     def __call__(self, img: PIL.Image.Image) -> PIL.Image.Image:
-        return F.blue_pen_filter(img)
+        return F.blue_pen_filter(img, applyfilter=self.applyfilter)
 
 
 class YenThreshold(ImageFilter):
