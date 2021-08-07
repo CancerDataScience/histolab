@@ -10,6 +10,15 @@ from ..fixtures import GS, RGB, RGBA
 from ..util import load_expectation
 
 
+def _create_rag_mask(pil_image):
+    mask = np.ones((pil_image.size[1], pil_image.size[0]))
+    mask[:100, :] = 0
+    mask[:, :100] = 0
+    mask[-100:, :] = 0
+    mask[:, -100:] = 0
+    return mask
+
+
 @pytest.mark.parametrize(
     "pil_image, expected_image",
     (
@@ -610,6 +619,29 @@ def test_rag_threshold_filter_on_rgb_image(pil_image, expected_image):
         np.unique(np.array(ImageChops.difference(rag_threshold_img, expected_value)))[0]
         == 0
     )
+
+
+@pytest.mark.parametrize(
+    "pil_image, mask, expected_image",
+    (
+        (
+            RGB.DIAGNOSTIC_SLIDE_THUMB_RGB,
+            None,
+            "mask-arrays/diagnostic-slide-thumb-rgb-rag-threshold-labels",
+        ),
+        (
+            RGB.DIAGNOSTIC_SLIDE_THUMB_RGB,
+            _create_rag_mask(RGB.DIAGNOSTIC_SLIDE_THUMB_RGB),
+            "mask-arrays/diagnostic-slide-thumb-rgb-rag-threshold-maskedlabels",
+        ),
+    ),
+)
+def test_rag_threshold_filter_return_labels(pil_image, mask, expected_image):
+    expected_value = load_expectation(expected_image, type_="npy")
+
+    ragged = imf.rag_threshold(pil_image, 650, 20.6, 9, return_labels=True, mask=mask)
+
+    np.testing.assert_array_almost_equal(np.array(ragged), np.array(expected_value))
 
 
 def test_rag_threshold_filter_on_gs_image():
