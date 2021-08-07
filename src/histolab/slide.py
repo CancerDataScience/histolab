@@ -444,11 +444,16 @@ class SlideSet:
     """Slideset object. It is considered a collection of Slides."""
 
     def __init__(
-        self, slides_path: str, processed_path: str, valid_extensions: list
+        self,
+        slides_path: str,
+        processed_path: str,
+        valid_extensions: List[str],
+        keep_slides: List[str] = None,
     ) -> None:
         self._slides_path = slides_path
         self._processed_path = processed_path
         self._valid_extensions = valid_extensions
+        self._keep_slides = keep_slides
 
     def __iter__(self) -> Iterator[Slide]:
         """Slides of the slideset
@@ -457,11 +462,17 @@ class SlideSet:
         -------
         generator of `Slide` objects.
         """
+        slide_names = [
+            name
+            for name in os.listdir(self._slides_path)
+            if (os.path.splitext(name)[1] in self._valid_extensions)
+        ]
+        if self._keep_slides is not None:
+            slide_names = [name for name in slide_names if name in self._keep_slides]
         return iter(
             [
-                Slide(os.path.join(self._slides_path, _path), self._processed_path)
-                for _path in os.listdir(self._slides_path)
-                if os.path.splitext(_path)[1] in self._valid_extensions
+                Slide(os.path.join(self._slides_path, name), self._processed_path)
+                for name in slide_names
             ]
         )
 
