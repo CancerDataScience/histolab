@@ -961,6 +961,9 @@ class ScoreTiler(GridTiler):
             slide, extraction_mask, logfreq=logfreq, monitor=monitor
         )
 
+        if not save_tiles:
+            return highest_score_tiles
+
         tiles_counter = 0
         filenames = []
 
@@ -972,13 +975,12 @@ class ScoreTiler(GridTiler):
                 level=self.level if self.mpp is None else None,
             )
             tile_filename = self._tile_filename(tile_wsi_coords, tiles_counter)
-            if save_tiles:
-                tile.save(os.path.join(slide.processed_path, tile_filename))
-                if tiles_counter % logfreq == 0:
-                    logger.info(
-                        f"{monitor}: Tile {tiles_counter} - score: {score}"
-                        f" saved: {tile_filename}"
-                    )
+            tile.save(os.path.join(slide.processed_path, tile_filename))
+            if tiles_counter % logfreq == 0:
+                logger.info(
+                    f"{monitor}: Tile {tiles_counter} - score: {score}"
+                    f" saved: {tile_filename}"
+                )
             filenames.append(tile_filename)
 
         if report_path:
@@ -1116,9 +1118,12 @@ class ScoreTiler(GridTiler):
         """
         scores_ = np.array(scores, dtype=object)[:, 0]
         coords = np.array(scores, dtype=object)[:, 1]
-        scores_scaled = (scores_ - np.min(scores_)) / (
-            np.max(scores_) - np.min(scores_)
-        )
+        try:
+            scores_scaled = (scores_ - np.min(scores_)) / (
+                np.max(scores_) - np.min(scores_)
+            )
+        except ZeroDivisionError:
+            scores_scaled = np.ones(scores_.shape, dtype=np.float32)
 
         return list(zip(scores_scaled, coords))
 
