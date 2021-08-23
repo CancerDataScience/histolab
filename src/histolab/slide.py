@@ -617,6 +617,7 @@ class SlideSet:
         valid_extensions: List[str],
         *,
         keep_slides: List[str] = None,
+        reverse=False,
         slide_kwargs: dict = None,
     ) -> None:
         self._slides_path = slides_path
@@ -624,6 +625,7 @@ class SlideSet:
         self._valid_extensions = valid_extensions
         self._keep_slides = keep_slides
         self._slide_kwargs = slide_kwargs
+        self._reverse = reverse
 
     def __iter__(self) -> Iterator[Slide]:
         """Slides of the slideset
@@ -639,6 +641,8 @@ class SlideSet:
         ]
         if self._keep_slides is not None:
             slide_names = [name for name in slide_names if name in self._keep_slides]
+        if self._reverse:
+            slide_names.reverse()
         return iter(
             [
                 Slide(
